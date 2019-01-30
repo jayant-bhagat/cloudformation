@@ -1,0 +1,134 @@
+{ 
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : " First cloud formation Template",
+    "Mappings":{ "Constants":{ "AMI":{ "DefaultAMIId":"ami-064539632d142f8cd" },
+    "Tags":{ "environment":"Production"  } } },
+    "Parameters"  : {
+        "KeyName": {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instances",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
+          },
+          "Environment":{  
+            "Description":"Enter the Environment",
+            "Type":"String",
+            "ConstraintDescription":"Must be a valid string."
+          },
+
+          "SSHLocation": {
+            "Description": "The IP address range that can be used to SSH to the EC2 instances",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+          },
+
+          "InstanceType": {  
+            "Type":"String",
+            "Default":"t2.medium",
+            "AllowedValues":[  
+              "t2.micro",
+              "t2.small",
+              "t2.medium"
+             ]
+
+        }},
+
+        "Resources": {
+        "WebServerSecurityGroup": {
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "Enable HTTP access via port 80 locked down to the load balancer + SSH access",
+                "SecurityGroupIngress" : [
+                {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+                {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : { "Ref" : "SSHLocation"}}
+        ]
+      }
+        },
+        "WebServer": {
+            "Type" : "AWS::EC2::Instance",
+            "Metadata" : {
+                "AWS::CloudFormation::Init" : {
+                    "configSets" : {
+                        "InstallAndRun" : ["Install"]
+                    },
+                    "Install" : {
+                        "commands" : {
+                            "command01" : {"command" : "sudo yum -y update" },
+                            "command02" : {"command" : "sudo yum -y install httpd"},
+                            "command03" : {"command" : "sudo touch /var/www/html/index.html"},
+                            "command03" : {"command" : "sudo echo 'hi' > /var/www/html/index.html" }
+                        }
+                    }
+                }
+            },
+            "Properties" : {
+                "ImageId" :  { "Fn::FindInMap":[  
+                    "Constants",
+                    "AMI",
+                    "DefaultAMIId"
+                  ] },
+                "InstanceType"   : { "Ref" : "InstanceType" },
+                "SecurityGroups" : [ {"Ref" : "WebServerSecurityGroup"} ],
+                "KeyName"        : { "Ref" : "KeyName" },
+                "UserData":{  
+                    "Fn::Base64":{  
+                      "Fn::Join":[  
+                        "",
+                        [  
+                          "#!/bin/bash -ex\n",
+                          "yum update\n",
+                          "yum -y install python-setuptools\n",
+                          "mkdir aws-cfn-bootstrap-latest\n",
+                          "curl https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz | tar xz -C aws-cfn-bootstrap-latest --strip-components 1\n",
+                          "easy_install aws-cfn-bootstrap-latest\n",
+                          "# Install the files and packages from the metadata\n",
+                          "/usr/local/bin/cfn-init -v ",
+                          "         --stack ",
+                          {  
+                            "Ref":"AWS::StackName"
+                          },
+                          "         --resource webserver ",
+                          "         --configsets InstallAndRun ",
+                          "         --region "
+                          ]
+                      ]
+                    }
+                  },
+                  "Tags":[  
+                    {  
+                      "Key":"Name",
+                      "Value":{  
+                        "Fn::Join":[  
+                          "",
+                          [  
+                            {  
+                              "Ref":"Environment"
+                            },
+                            "-webserver"
+                          ]
+                        ]
+                      }
+                    },
+                    {  
+                        "Key":"Environment",
+                        "Value":{  
+                          "Fn::FindInMap":[  
+                            "Constants",
+                            "Tags",
+                            "environment"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+
+                                }
+              }
+      
+    
+
+
